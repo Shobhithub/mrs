@@ -14,10 +14,10 @@ if "email_verified" not in st.session_state:
 
 # --- Simulated Aadhaar DOB Retrieval ---
 def dob(aadhaar_number):
-    fake_dob = "2005-04-01"  # Replace this with real API logic if needed
+    fake_dob = "2005-04-01"  # Replace this with real logic or API
     return datetime.strptime(fake_dob, "%Y-%m-%d")
 
-# --- Download Files from Google Drive ---
+# --- Download & Load Files ---
 @st.cache_data
 def load_files():
     files = {
@@ -35,7 +35,7 @@ def load_files():
     similarity = pickle.load(open("similarity.pkl", "rb"))
     return pd.DataFrame(movie_dict), similarity
 
-# --- Fetch Poster & Rating ---
+# --- Fetch Poster & Rating from TMDB ---
 def fetch_movie_data(movie_id):
     try:
         url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key=8265bd1679663a7ea12ac168da84d2e8&language=en-US"
@@ -48,21 +48,39 @@ def fetch_movie_data(movie_id):
     except:
         return "https://via.placeholder.com/200", 0
 
-# --- Recommend Function ---
+# --- UI Header ---
+def display_header():
+    st.image("https://wes.eletsonline.com/assets/images/haridwar-logo-500.png", width=200)
+    st.markdown('<h1 style="color:blue;">Haridwar University</h1>', unsafe_allow_html=True)
+    st.markdown('<h2 style="color:green;">Movie Recommendation System 🎬</h2>', unsafe_allow_html=True)
+
+# --- Load data once
+movies, similarity = load_files()
+
+# Add lowercase movie titles for safe matching
+movies["title_lower"] = movies["title"].str.lower().str.strip()
+
+# --- Recommend Movies ---
 def recommend(movie):
-    if movie not in movies['title'].values:
+    movie = movie.strip().lower()
+    if movie not in movies['title_lower'].values:
         st.error("Movie not found! Please select a valid movie.")
         return [], [], [], []
 
-    movie_index = movies[movies['title'] == movie].index[0]
-    distances = similarity[movie_index]
-    movie_indices = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:7]
+    movie_index = movies[movies['title_lower'] == movie].index[0]
+
+    try:
+        distances = similarity[movie_index]
+    except IndexError:
+        st.error("Similarity data not found.")
+        return [], [], [], []
+
+    movie_indices = sorted(list(enumerate(distances)), key=lambda x: x[1], reverse=True)[1:7]
 
     recommended_movies, posters, links, ratings = [], [], [], []
-
     for i in movie_indices:
-        movie_id = movies.iloc[i[0]].movie_id
-        title = movies.iloc[i[0]].title
+        movie_id = movies.iloc[i[0]]['movie_id']
+        title = movies.iloc[i[0]]['title']
         poster, rating = fetch_movie_data(movie_id)
 
         recommended_movies.append(title)
@@ -71,12 +89,6 @@ def recommend(movie):
         ratings.append(rating)
 
     return recommended_movies, posters, links, ratings
-
-# --- UI Header ---
-def display_header():
-    st.image("https://wes.eletsonline.com/assets/images/haridwar-logo-500.png", width=200)
-    st.markdown('<h1 style="color:blue;">Haridwar University</h1>', unsafe_allow_html=True)
-    st.markdown('<h2 style="color:green;">Movie Recommendation System 🎬</h2>', unsafe_allow_html=True)
 
 # --- App Logic ---
 if not st.session_state["authenticated"]:
@@ -101,6 +113,7 @@ if not st.session_state["authenticated"]:
             st.warning("Enter a valid 12-digit Aadhaar number.")
 
 elif not st.session_state["email_verified"]:
+    display_header()
     st.subheader("🔐 Email & Password Setup")
     email = st.text_input("Enter your Email")
     password = st.text_input("Password", type="password")
@@ -116,22 +129,20 @@ elif not st.session_state["email_verified"]:
 
 else:
     display_header()
-    movies, similarity = load_files()
 
-    if not movies.empty:
-        selected_movie = st.selectbox("Choose a movie:", movies['title'].values)
-        if st.button("Recommend"):
-            names, posters, links, ratings = recommend(selected_movie)
-            if names:
-                cols = st.columns(len(names))
-                for i, col in enumerate(cols):
-                    with col:
-                        st.image(posters[i], width=180)
-                        st.markdown(f"**{names[i]}**")
-                        st.markdown(f"⭐ Rating: {ratings[i]}")
-                        st.markdown(f"[More Info]({links[i]})", unsafe_allow_html=True)
-            else:
-                st.warning("No recommendations found.")
+    selected_movie = st.selectbox("🎥 Choose a movie:", movies['title'].values)
+    if st.button("Recommend"):
+        names, posters, links, ratings = recommend(selected_movie)
+        if names:
+            cols = st.columns(len(names))
+            for i, col in enumerate(cols):
+                with col:
+                    st.image(posters[i], width=180)
+                    st.markdown(f"**{names[i]}**")
+                    st.markdown(f"⭐ Rating: {ratings[i]}")
+                    st.markdown(f"[More Info]({links[i]})", unsafe_allow_html=True)
+        else:
+            st.warning("No recommendations found.")
 
     if st.button("Logout"):
         st.session_state["authenticated"] = False
